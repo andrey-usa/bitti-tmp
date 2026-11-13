@@ -1,0 +1,20 @@
+{
+  "openapi": "3.0.3",
+  "info": {"title": "The test site's API", "version": "1"},
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Profile": {
+        "type": "object",
+        "required": ["id", "email", "role"],
+        "properties": {
+          "id": {"type": "integer", "minimum": 1},
+          "email": {"type": "string", "format": "email"},
+          "role": {"$ref": "#/components/schemas/Role"},
+          "address": {"type": "object", "nullable": true, "required": ["city"]}
+        }
+      },
+      "Role": {"type": "string", "enum": ["shopper", "admin"]}
+    }
+  }
+}

@@ -1,0 +1,143 @@
+name: fuzz
+
+# The fuzz targets: 30 minutes each every night; five on a pull request or a
+# dispatch; two on a push that touches the code. A run
+# starts from the corpus the last one left, so the nights add up. A crash
+# fails the job: its last lines are in the log, the input is in the
+# artifact, and the error on the run says what to run.
+
+on:
+  push:
+    branches: [next]
+    paths: ["fuzz/**", "src/**", "Cargo.lock", ".github/workflows/fuzz.yml"]
+  pull_request:
+    paths: ["fuzz/**", "src/**", "Cargo.lock", ".github/workflows/fuzz.yml"]
+  schedule: [{cron: "0 3 * * *"}]
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Fuzz seconds per target (empty: 300; 1800 on schedule, 120 on a push)"
+        required: false
+      navigera:
+        description: "navigera branch or commit to build against (empty: next)"
+        required: false
+        default: ""
+
+permissions: {contents: read}
+
+env:
+  NAVIGERA_REF: ${{ inputs.navigera || 'next' }}
+
+concurrency:
+  group: fuzz-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: bt_parse
+            seeds: bt
+          - target: gherkin_parse
+            seeds: feature
+    env:
+      TARGET: ${{ matrix.target }}
+      SEEDS: ${{ matrix.seeds }}
+    steps:
+      # bitti builds against navigera checked out beside it
+      # (`../navigera`), same layout as its ci workflow.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: bitti
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: andrey-usa/navigera
+          ref: ${{ env.NAVIGERA_REF }}
+          path: navigera
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # v1
+        with:
+          toolchain: nightly
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
+        with:
+          tool: cargo-fuzz@0.13.2
+      - name: The corpus the last run left
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bitti/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: seed corpus
+        working-directory: bitti/fuzz
+        run: |
+          mkdir -p "corpus/$TARGET" artifacts
+          case "$SEEDS" in
+            bt) find ../examples ../tests -name '*.bt' -exec cp {} "corpus/$TARGET/" \; 2>/dev/null || true ;;
+            feature) find ../tests ../examples -name '*.feature' -exec cp {} "corpus/$TARGET/" \; 2>/dev/null || true ;;
+          esac
+          echo "corpus: $(ls "corpus/$TARGET" | wc -l) inputs"
+      - name: fuzz
+        working-directory: bitti/fuzz
+        env:
+          # ASAN aborts on huge allocations instead of returning NULL; the
+          # product handles those cleanly, so let the allocator fail soft.
+          ASAN_OPTIONS: allocator_may_return_null=1
+          # Through the environment, not the script text: a dispatch input
+          # expanded into the script could run as code.
+          DURATION_INPUT: ${{ inputs.duration }}
+          EVENT: ${{ github.event_name }}
+          # The log is read below and in the artifact: no colour codes in it.
+          CARGO_TERM_COLOR: never
+        run: |
+          # NOTE: this step runs under bash -e, so a plain failing command
+          # aborts the script before the lines after it run. The cargo
+          # invocation must therefore be in an OR list (exempt from -e)
+          # for its log to survive a crash, hang or build failure.
+          DURATION="$DURATION_INPUT"
+          if [ -z "$DURATION" ]; then
+            case "$EVENT" in schedule) DURATION=1800;; push) DURATION=120;; *) DURATION=300;; esac
+          fi
+          case "$DURATION" in ''|*[!0-9]*) echo "duration must be a number of seconds: $DURATION" >&2; exit 2;; esac
+          log="fuzz-$TARGET.log"
+          # The installed cargo-fuzz is a static (musl) build and would build
+          # the target for musl too, which the sanitizer cannot link: name
+          # the host.
+          host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+          code=0
+          cargo +nightly fuzz run --fuzz-dir . --target "$host" "$TARGET" "corpus/$TARGET" -- \
+            -max_total_time="$DURATION" -rss_limit_mb=2048 -timeout=10 -max_len=65536 \
+            -artifact_prefix="$PWD/artifacts/" > "$log" 2>&1 || code=$?
+          # What the run did, without the line libFuzzer prints per input.
+          grep -v -E '^#[0-9]+[[:space:]]+(NEW|REDUCE|pulse|RELOAD)' "$log" | tail -60 > artifacts/run-summary.txt || true
+          cp "$log" artifacts/ || true
+          cat artifacts/run-summary.txt
+          if [ "$code" != 0 ]; then
+            what=$(grep -m1 -E '^SUMMARY: |^error(\[E[0-9]+\])?: ' "$log" || echo "exit $code")
+            input=$(ls artifacts | grep -m1 -E '^(crash|oom|timeout|leak|slow-unit)-' || true)
+            if [ -n "$input" ]; then
+              next="Input: fuzz/artifacts/$input in the artifact fuzz-$TARGET. Run it: cargo +nightly fuzz run --fuzz-dir fuzz $TARGET <the file>; then keep it as a test."
+            else
+              next="No input was written: the target did not build or run. The last lines are in this job's log."
+            fi
+            echo "::error title=fuzz $TARGET::$what. $next"
+          fi
+          exit $code
+      - name: Keep the corpus for the next run
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: bitti/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      # The log and any crashing input. The corpus is in the cache.
+      - name: upload the log and crashes
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: bitti/fuzz/artifacts
+          retention-days: 30

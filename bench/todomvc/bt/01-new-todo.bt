@@ -1,0 +1,44 @@
+# test.describe('New Todo')
+use common.bt
+
+before each
+  goto ${APP}
+
+scenario "New Todo: should allow me to add todo items"
+  # Create 1st todo.
+  fill --placeholder "What needs to be done?" "${TODO0}"
+  press Enter --placeholder "What needs to be done?"
+  # Make sure the list only has one todo item.
+  expect --selector "[data-testid=todo-title]" count is 1
+  expect --testid todo-title --nth 0 text is "${TODO0}"
+  # Create 2nd todo.
+  fill --placeholder "What needs to be done?" "${TODO1}"
+  press Enter --placeholder "What needs to be done?"
+  # Make sure the list now has two todo items.
+  expect --selector "[data-testid=todo-title]" count is 2
+  expect --testid todo-title --nth 0 text is "${TODO0}"
+  expect --testid todo-title --nth 1 text is "${TODO1}"
+  run checkNumberOfTodosInLocalStorage 2
+
+scenario "New Todo: should clear text input field when an item is added"
+  # Create one todo item.
+  fill --placeholder "What needs to be done?" "${TODO0}"
+  press Enter --placeholder "What needs to be done?"
+  # Check that input is empty.
+  expect --placeholder "What needs to be done?" empty
+  run checkNumberOfTodosInLocalStorage 1
+
+scenario "New Todo: should append new items to the bottom of the list"
+  # Create 3 items.
+  run createDefaultTodos
+  # Check test using different methods.
+  expect --text "3 items left" visible
+  expect --testid todo-count text is "3 items left"
+  expect --testid todo-count text contains 3
+  expect --testid todo-count text matches '3'
+  # Check all items in one call.
+  expect --selector "[data-testid=todo-title]" count is 3
+  expect --testid todo-title --nth 0 text is "${TODO0}"
+  expect --testid todo-title --nth 1 text is "${TODO1}"
+  expect --testid todo-title --nth 2 text is "${TODO2}"
+  run checkNumberOfTodosInLocalStorage 3

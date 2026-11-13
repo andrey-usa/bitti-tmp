@@ -1,0 +1,14 @@
+scenario "A session runs out after 15 idle minutes"
+  clock install --time 2024-02-02T08:00:00 --paused
+  goto /expiry
+  expect text "Today 2024-02-02"
+  clock run-for 14:59
+  expect text "Signed in"
+  clock run-for 1s
+  expect text "Session expired"
+  expect js "new Date().toISOString()" contains "2024-02-02"
+
+scenario "The next scenario's page keeps real time"
+  goto /expiry
+  expect no text "Today 2024-02-02"
+  expect text "Signed in"

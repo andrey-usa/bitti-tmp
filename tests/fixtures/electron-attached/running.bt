@@ -1,0 +1,22 @@
+# An Electron app that is already running with a DevTools port, as a
+# developer starts it: bitti attaches to it, and the scenarios run in
+# order in the one app, each going on where the one before left it.
+#   electron --remote-debugging-port=9222 ../navigera/tests/fixtures/electron-app &
+#   bitti run tests/fixtures/electron-attached --attach 9222
+
+scenario "Saves an order in the running app"
+  expect title is Orders
+  fill --label Customer Grace
+  fill --label Quantity 2
+  click --role button --name "Save order"
+  expect text "Saved A-1002 for Grace"
+
+scenario "Finds the app as the last scenario left it"
+  expect text "Saved A-1002 for Grace"
+  expect --label Customer value is Grace
+
+scenario "Opens Settings in a window of its own"
+  click --role button --name Settings
+  expect title is Settings
+  click --role button --name Close
+  expect title is Orders

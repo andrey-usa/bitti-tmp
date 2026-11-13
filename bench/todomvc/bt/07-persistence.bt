@@ -1,0 +1,25 @@
+# test.describe('Persistence')
+use common.bt
+
+before each
+  goto ${APP}
+
+scenario "Persistence: should persist its data"
+  run createTwoTodos
+  check --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  expect --selector "[data-testid=todo-item]" count is 2
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "${TODO1}"
+  expect --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox checked
+  expect --testid todo-item --nth 0 attr class is completed
+  expect --testid todo-item --nth 1 attr class is ""
+  # Ensure there is 1 completed item.
+  run checkNumberOfCompletedTodosInLocalStorage 1
+  # Now reload.
+  reload
+  expect --selector "[data-testid=todo-item]" count is 2
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "${TODO1}"
+  expect --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox checked
+  expect --testid todo-item --nth 0 attr class is completed
+  expect --testid todo-item --nth 1 attr class is ""

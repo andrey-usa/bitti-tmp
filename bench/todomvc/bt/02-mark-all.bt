@@ -1,0 +1,43 @@
+# test.describe('Mark all as completed')
+use common.bt
+
+before each
+  goto ${APP}
+  run createDefaultTodos
+  run checkNumberOfTodosInLocalStorage 3
+
+after each
+  run checkNumberOfTodosInLocalStorage 3
+
+scenario "Mark all as completed: should allow me to mark all items as completed"
+  # Complete all todos.
+  check --label "Mark all as complete"
+  # Ensure all todos have 'completed' class.
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 attr class is completed
+  expect --testid todo-item --nth 1 attr class is completed
+  expect --testid todo-item --nth 2 attr class is completed
+  run checkNumberOfCompletedTodosInLocalStorage 3
+
+scenario "Mark all as completed: should allow me to clear the complete state of all items"
+  # Check and then immediately uncheck.
+  check --label "Mark all as complete"
+  uncheck --label "Mark all as complete"
+  # Should be no completed classes.
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 attr class is ""
+  expect --testid todo-item --nth 1 attr class is ""
+  expect --testid todo-item --nth 2 attr class is ""
+
+scenario "Mark all as completed: complete all checkbox should update state when items are completed / cleared"
+  check --label "Mark all as complete"
+  expect --label "Mark all as complete" checked
+  run checkNumberOfCompletedTodosInLocalStorage 3
+  # Uncheck first todo.
+  uncheck --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  # Reuse toggleAll locator and make sure its not checked.
+  expect not --label "Mark all as complete" checked
+  check --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  run checkNumberOfCompletedTodosInLocalStorage 3
+  # Assert the toggle all is checked again.
+  expect --label "Mark all as complete" checked

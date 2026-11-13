@@ -1,0 +1,11 @@
+{
+  "address": {
+    "city": "Oslo"
+  },
+  "email": "ada@example.com",
+  "role": "shopper",
+  "tags": [
+    "a",
+    "b"
+  ]
+}

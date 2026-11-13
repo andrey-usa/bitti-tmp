@@ -1,0 +1,32 @@
+[package]
+name = "bitti"
+version = "0.2.1"
+edition = "2021"
+description = "Plain-text web tests that run on real Chrome through navigera: one native binary, no Node."
+license = "MIT"
+repository = "https://github.com/andrey-usa/bitti"
+rust-version = "1.91"
+
+[[bin]]
+name = "bitti"
+path = "src/main.rs"
+
+[dependencies]
+# navigera checked out beside this repository (../navigera).
+navigera = { version = "0.12", path = "../navigera", features = ["http"] }
+anyhow = "1"
+serde_json = "1"
+regex = "1"
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+toml = { version = "0.8", default-features = false, features = ["parse"] }
+
+# musl's allocator is slow on the many small allocations a large page's
+# snapshot makes: the static Linux builds use mimalloc (src/main.rs).
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

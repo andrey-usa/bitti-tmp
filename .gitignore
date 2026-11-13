@@ -1,0 +1,7 @@
+/target
+/.bitti
+__pycache__/
+# The docs site: docs-site/build.py writes every file under src/ from
+# docs-site/site.toml, and mdBook builds book/ from them.
+/docs-site/book/
+/docs-site/src/

@@ -1,0 +1,24 @@
+scenario "A value that differs says what came back"
+  http GET /api/search --query q=boots
+  expect json $.q is shoes
+
+scenario "A contract that breaks says where"
+  http GET /api/items
+  expect json $ schema items.schema.json
+
+scenario "A job that never finishes in time"
+  http POST /api/jobs
+  save job = json $.id
+  retry --timeout-ms 100
+    http GET /api/jobs/${job}
+      expect json $.status is done
+
+scenario "Signed out"
+  http GET /api/profile
+
+scenario "An answer that changed from its snapshot"
+  http GET /api/search --query q=boots
+  expect json snapshot search
+
+scenario "A GraphQL answer with errors"
+  http POST /graphql --graphql "{ nope }"

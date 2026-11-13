@@ -1,0 +1,62 @@
+# Scenarios of `http` steps and their checks alone: no browser starts.
+
+auth api-user
+  http POST /api/login --form user=ada --form "password=${secret:BT_TEST_PW}"
+
+scenario "Sign in with a form, and the cookie goes with the next call" @api
+  http POST /api/login --form user=ada --form "password=${secret:BT_TEST_PW}"
+    expect status 200
+  expect cookie sid is api
+  http GET /api/profile
+    expect status 200
+    expect json $.email is ada@example.com
+    expect json $ contains '{"role": "shopper", "address": {"city": "Oslo"}}'
+    expect json $.tags is '["a", "b"]'
+    expect json $.tags count is 2
+    expect json $ schema profile.schema.json
+    expect json $ schema openapi.json#/components/schemas/Profile
+    expect time < 5s
+  print json $.address
+  print "signed in as ${http.status}"
+
+scenario "A query is encoded" @api
+  http GET /api/search --query "q=red shoes & socks" --query n=2
+  expect json $ is '{"n": 2.0, "q": "red shoes & socks"}'
+
+scenario "A multipart upload" @api
+  http POST /api/upload --multipart note=hello --multipart "file=@upload.txt;type=text/plain"
+  expect json $.fields.note is hello
+  expect json $.files.file contains '{"filename": "upload.txt", "size": 5, "type": "text/plain"}'
+
+scenario "A job that finishes in the background" @api
+  http POST /api/jobs
+    expect status 202
+  save job = json $.id
+  retry --timeout-ms 5000
+    http GET /api/jobs/${job}
+      expect json $.status is done
+
+scenario "Signed in by an auth of http steps" @api
+  as api-user
+  http GET /api/profile
+  expect json $.id is 7
+
+scenario "Not written yet" @fixme
+  http GET /api/nowhere
+
+scenario "Basic and bearer sign-ins" @api
+  http GET /api/basic --user "ada:${secret:BT_TEST_PW}"
+  expect json $.user is ada
+  http GET /api/token --bearer t0k
+  expect json $.token is ok
+
+scenario "The answer is what its snapshot holds" @api
+  as api-user
+  http GET /api/profile
+  expect json snapshot profile --ignore $.id,$.address.zip
+  expect json $.tags snapshot tags
+
+scenario "A GraphQL query" @api
+  http POST /graphql --graphql "query($id: ID!) { product(id: $id) { id name price } }" --variables '{"id": "p1"}'
+  expect json $.data.product.name is "Trail shoe"
+  expect json $.data.product.price > 50

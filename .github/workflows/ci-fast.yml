@@ -1,0 +1,85 @@
+name: ci-fast
+
+# Experiment only (bitti-tmp): can the 55-test integration binary be spread
+# across runners? A control job runs the exact command CI runs today; a
+# 4-shard matrix runs the same tests through nextest partitions.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NAVIGERA_REF: next
+
+jobs:
+  control:
+    name: control (cargo test, as today)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: bitti
+    env:
+      BITTI_REQUIRE_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: bitti
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: andrey-usa/navigera
+          ref: next
+          path: navigera
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache-workspaces: bitti
+          cache-on-failure: false
+      - name: Tests (timed)
+        run: |
+          set -o pipefail
+          s=$(date +%s)
+          cargo test --locked --no-fail-fast 2>&1 | tail -30
+          echo "::notice title=control::cargo test took $(( $(date +%s) - s ))s"
+
+  shard:
+    name: shard ${{ matrix.shard }}/4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        shell: bash
+        working-directory: bitti
+    env:
+      BITTI_REQUIRE_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: bitti
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: andrey-usa/navigera
+          ref: next
+          path: navigera
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache-workspaces: bitti
+          cache-on-failure: false
+      - uses: taiki-e/install-action@nextest
+      - name: Tests (timed, partitioned)
+        run: |
+          s=$(date +%s)
+          cargo nextest run --locked --no-fail-fast \
+            --partition count:${{ matrix.shard }}/4 2>&1 | tail -20
+          echo "::notice title=shard ${{ matrix.shard }}::nextest took $(( $(date +%s) - s ))s"

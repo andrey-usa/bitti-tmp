@@ -1,0 +1,87 @@
+name: gate
+
+# Work gate: what bitti does with a suite before its browser starts (read,
+# parse, `use`, step patterns), counted in instructions by valgrind on
+# generated suites at two sizes (bench/gate/perf_gate.py). Fails when four
+# times the suite costs more than 5.5 times the work, or when this ref
+# costs more than 5% over the release before it. Both binaries are the
+# static musl build a release ships: a glibc build against a musl one
+# compares two allocators, not two versions.
+
+on:
+  push:
+    branches: [next]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "release tag to compare with (empty: the latest release)"
+        default: ""
+      navigera:
+        description: "navigera branch or commit to build against (empty: next, or master for main)"
+        default: ""
+
+permissions:
+  contents: read
+
+# A newer push to a branch replaces the run of the one before it; a
+# dispatch on the same commit runs beside it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NAVIGERA_REF: ${{ inputs.navigera || ((github.base_ref || github.ref_name) == 'main' && 'master' || 'next') }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: bitti
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: bitti
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: andrey-usa/navigera
+          ref: ${{ env.NAVIGERA_REF }}
+          path: navigera
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2
+        with:
+          toolchain: stable
+          target: x86_64-unknown-linux-musl
+          # bitti is checked out under bitti/ (navigera beside it).
+          cache-workspaces: bitti
+          cache-on-failure: false
+      - name: valgrind and musl
+        uses: ./bitti/.github/actions/apt-install
+        with:
+          packages: valgrind musl-tools
+      - name: The candidate (static musl, as a release builds it)
+        run: cargo build --locked --release --bin bitti --target x86_64-unknown-linux-musl
+      - name: The release before it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ inputs.base }}
+        run: |
+          tag="${BASE:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}"
+          echo "base: $tag"
+          mkdir -p "$RUNNER_TEMP/base" && cd "$RUNNER_TEMP/base"
+          asset=bitti-x86_64-unknown-linux-musl.tar.gz
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --pattern "$asset.sha256"
+          sha256sum -c "$asset.sha256"
+          tar -xzf "$asset"
+          echo "BASE_BIN=$RUNNER_TEMP/base/bitti" >> "$GITHUB_ENV"
+          echo "BASE_TAG=$tag" >> "$GITHUB_ENV"
+      - name: Gate
+        run: |
+          set -o pipefail
+          echo "Against $BASE_TAG:" | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 bench/gate/perf_gate.py --head target/x86_64-unknown-linux-musl/release/bitti \
+            --base "$BASE_BIN" | tee -a "$GITHUB_STEP_SUMMARY"

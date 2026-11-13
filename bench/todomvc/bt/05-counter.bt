@@ -1,0 +1,14 @@
+# test.describe('Counter')
+use common.bt
+
+before each
+  goto ${APP}
+
+scenario "Counter: should display the current number of todo items"
+  fill --placeholder "What needs to be done?" "${TODO0}"
+  press Enter --placeholder "What needs to be done?"
+  expect --testid todo-count text contains 1
+  fill --placeholder "What needs to be done?" "${TODO1}"
+  press Enter --placeholder "What needs to be done?"
+  expect --testid todo-count text contains 2
+  run checkNumberOfTodosInLocalStorage 2

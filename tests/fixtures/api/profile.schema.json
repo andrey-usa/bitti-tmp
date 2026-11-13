@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["id", "email", "role"],
+  "properties": {
+    "id": {"type": "integer", "minimum": 1},
+    "email": {"type": "string", "format": "email"},
+    "role": {"enum": ["shopper", "admin"]},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "address": {"$ref": "#/$defs/address"}
+  },
+  "$defs": {
+    "address": {"type": "object", "required": ["city"], "properties": {"zip": {"type": "string", "pattern": "^[0-9]{4}$"}}}
+  }
+}

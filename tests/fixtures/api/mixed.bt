@@ -1,0 +1,13 @@
+# One file, both kinds: the API scenario runs with no browser, the page
+# one with it, and an auth of http steps signs either in.
+auth api-user
+  http POST /api/login --form user=ada --form "password=${secret:BT_TEST_PW}"
+
+scenario "The API" @api
+  http GET /api/search --query q=x
+  expect json $.q is x
+
+scenario "The page, signed in through the API"
+  as api-user
+  goto /api/profile
+  expect text "ada@example.com"

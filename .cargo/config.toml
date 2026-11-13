@@ -1,0 +1,9 @@
+# The static Linux builds allocate with mimalloc (src/main.rs). Its default
+# commits each 1 GiB arena up front on Linux, and transparent huge pages
+# then back what the process touches with 2 MiB pages: more resident memory
+# and a slower first large snapshot (navigera measured 18 MB instead of 6,
+# and 655 ms instead of 200). Committing on demand keeps both where
+# glibc's are, whatever the machine's huge-page setting.
+[env]
+CFLAGS_x86_64_unknown_linux_musl = "-DMI_DEFAULT_ARENA_EAGER_COMMIT=0"
+CFLAGS_aarch64_unknown_linux_musl = "-DMI_DEFAULT_ARENA_EAGER_COMMIT=0"

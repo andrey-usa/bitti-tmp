@@ -1,0 +1,12 @@
+scenario "Waits longer than its scenario may"
+  goto /late?ms=5000
+  expect text ready --timeout-ms 10000
+  expect text never
+
+scenario "Fits in its time"
+  goto /late?ms=50
+  expect text ready
+
+scenario "Slow, so three times the time" @slow
+  goto /late?ms=2000
+  expect text ready --timeout-ms 10000

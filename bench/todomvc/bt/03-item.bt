@@ -1,0 +1,43 @@
+# test.describe('Item')
+use common.bt
+
+before each
+  goto ${APP}
+
+scenario "Item: should allow me to mark items as complete"
+  # Create two items.
+  run createTwoTodos
+  # Check first item.
+  check --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  expect --testid todo-item --nth 0 attr class is completed
+  # Check second item.
+  expect not --testid todo-item --nth 1 attr class is completed
+  check --selector "[data-testid=todo-item]:nth-child(2) *" --role checkbox
+  # Assert completed class.
+  expect --testid todo-item --nth 0 attr class is completed
+  expect --testid todo-item --nth 1 attr class is completed
+
+scenario "Item: should allow me to un-mark items as complete"
+  # Create two items.
+  run createTwoTodos
+  check --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  expect --testid todo-item --nth 0 attr class is completed
+  expect not --testid todo-item --nth 1 attr class is completed
+  run checkNumberOfCompletedTodosInLocalStorage 1
+  uncheck --selector "[data-testid=todo-item]:nth-child(1) *" --role checkbox
+  expect not --testid todo-item --nth 0 attr class is completed
+  expect not --testid todo-item --nth 1 attr class is completed
+  run checkNumberOfCompletedTodosInLocalStorage 0
+
+scenario "Item: should allow me to edit an item"
+  run createDefaultTodos
+  dblclick --testid todo-item --nth 1
+  expect --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit value is "${TODO1}"
+  fill --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit "buy some sausages"
+  press Enter --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit
+  # Explicitly assert the new text value.
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "buy some sausages"
+  expect --testid todo-item --nth 2 text is "${TODO2}"
+  run checkTodosInLocalStorage "buy some sausages"

@@ -1,0 +1,73 @@
+name: Deploy docs to GitHub Pages
+
+# docs-site/build.py writes every page of the site from its source (README.md,
+# docs/, the skill, CHANGELOG.md and the binary's --help), checks every link
+# and anchor in the built HTML, and fails if README.md's Documentation section
+# or llms.txt is stale. Any push to the default branch can change the site.
+on:
+  push:
+    branches: ["next"]
+  workflow_dispatch:
+
+# The build runs the repository's code and gets to read it, nothing more;
+# publishing is the deploy job's alone.
+permissions:
+  contents: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+env:
+  MDBOOK: "0.5.4"
+  MDBOOK_SHA256: "3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: bitti
+          persist-credentials: false
+          fetch-depth: 0
+      # bitti links navigera as a library, checked out beside it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: andrey-usa/navigera
+          ref: next
+          path: navigera
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2
+        with:
+          toolchain: stable
+          cache-on-failure: false
+      - name: Build bitti (its --help and --version are on the site)
+        working-directory: bitti
+        run: cargo build --release --locked --bin bitti
+      - name: Install mdBook
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/mdbook.tar.gz" \
+            "https://github.com/rust-lang/mdBook/releases/download/v$MDBOOK/mdbook-v$MDBOOK-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$MDBOOK_SHA256  $RUNNER_TEMP/mdbook.tar.gz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/mdbook.tar.gz" -C "$RUNNER_TEMP"
+      - name: Write the pages, build the site, check its links
+        working-directory: bitti
+        run: python3 docs-site/build.py --binary target/release/bitti --mdbook "$RUNNER_TEMP/mdbook" --check
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: bitti/docs-site/book
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

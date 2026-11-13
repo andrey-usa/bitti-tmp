@@ -1,0 +1,16 @@
+# mdBook settings, the same in every product but for the names. Its pages are
+# written by docs-site/build.py from docs-site/site.toml.
+[book]
+title = "bitti"
+authors = ["andrey-usa"]
+language = "en"
+description = "Plain-text web tests that run on real Chrome through navigera: one native binary, no Node."
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+site-url = "/bitti/"
+git-repository-url = "https://github.com/andrey-usa/bitti"
+no-section-label = true

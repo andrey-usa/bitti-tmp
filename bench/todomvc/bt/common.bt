@@ -1,0 +1,36 @@
+# Shared values and flows for the TodoMVC port of Playwright's
+# demo-todo-app.spec.ts (create-playwright 1.17.137). No scenarios here.
+# Each Playwright helper is a flow of the same name.
+
+set APP = http://127.0.0.1:8765/todomvc/
+set TODO0 = "buy some cheese"
+set TODO1 = "feed the cat"
+set TODO2 = "book a doctors appointment"
+
+# createDefaultTodos(page)
+flow createDefaultTodos()
+  fill --placeholder "What needs to be done?" "${TODO0}"
+  press Enter --placeholder "What needs to be done?"
+  fill --placeholder "What needs to be done?" "${TODO1}"
+  press Enter --placeholder "What needs to be done?"
+  fill --placeholder "What needs to be done?" "${TODO2}"
+  press Enter --placeholder "What needs to be done?"
+
+# The first two items, as the tests' `for (const item of TODO_ITEMS.slice(0, 2))` loop
+flow createTwoTodos()
+  fill --placeholder "What needs to be done?" "${TODO0}"
+  press Enter --placeholder "What needs to be done?"
+  fill --placeholder "What needs to be done?" "${TODO1}"
+  press Enter --placeholder "What needs to be done?"
+
+# checkNumberOfTodosInLocalStorage(page, expected)
+flow checkNumberOfTodosInLocalStorage(expected)
+  expect js "JSON.parse(localStorage['react-todos']).length === ${expected}"
+
+# checkNumberOfCompletedTodosInLocalStorage(page, expected)
+flow checkNumberOfCompletedTodosInLocalStorage(expected)
+  expect js "JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === ${expected}"
+
+# checkTodosInLocalStorage(page, title)
+flow checkTodosInLocalStorage(title)
+  expect js "JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes('${title}')"

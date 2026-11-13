@@ -1,0 +1,22 @@
+# test.describe('Clear completed button')
+use common.bt
+
+before each
+  goto ${APP}
+  run createDefaultTodos
+
+scenario "Clear completed button: should display the correct text"
+  check --selector ".todo-list li .toggle" --nth 0
+  expect --role button --name "Clear completed" visible
+
+scenario "Clear completed button: should remove completed items when clicked"
+  check --selector "[data-testid=todo-item]:nth-child(2) *" --role checkbox
+  click --role button --name "Clear completed"
+  expect --selector "[data-testid=todo-item]" count is 2
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "${TODO2}"
+
+scenario "Clear completed button: should be hidden when there are no items that are completed"
+  check --selector ".todo-list li .toggle" --nth 0
+  click --role button --name "Clear completed"
+  expect --role button --name "Clear completed" hidden

@@ -1,0 +1,52 @@
+# test.describe('Editing')
+use common.bt
+
+before each
+  goto ${APP}
+  run createDefaultTodos
+  run checkNumberOfTodosInLocalStorage 3
+
+scenario "Editing: should hide other controls when editing"
+  dblclick --testid todo-item --nth 1
+  expect not --selector "[data-testid=todo-item]:nth-child(2) *" --role checkbox visible
+  # todoItem.locator('label', { hasText: TODO_ITEMS[1] }): CSS has no hasText; the item has one label
+  expect not --selector "[data-testid=todo-item]:nth-child(2) label" visible
+  run checkNumberOfTodosInLocalStorage 3
+
+scenario "Editing: should save edits on blur"
+  dblclick --testid todo-item --nth 1
+  fill --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit "buy some sausages"
+  # locator.dispatchEvent('blur'): no such step, so the same event from a script
+  eval "document.querySelectorAll('[data-testid=todo-item]')[1].querySelector('input[aria-label=Edit]').dispatchEvent(new FocusEvent('blur', { bubbles: true, cancelable: true, composed: true }))"
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "buy some sausages"
+  expect --testid todo-item --nth 2 text is "${TODO2}"
+  run checkTodosInLocalStorage "buy some sausages"
+
+scenario "Editing: should trim entered text"
+  dblclick --testid todo-item --nth 1
+  fill --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit "    buy some sausages    "
+  press Enter --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "buy some sausages"
+  expect --testid todo-item --nth 2 text is "${TODO2}"
+  run checkTodosInLocalStorage "buy some sausages"
+
+scenario "Editing: should remove the item if an empty text string was entered"
+  dblclick --testid todo-item --nth 1
+  fill --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit ""
+  press Enter --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit
+  expect --selector "[data-testid=todo-item]" count is 2
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "${TODO2}"
+
+scenario "Editing: should cancel edits on escape"
+  dblclick --testid todo-item --nth 1
+  fill --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit "buy some sausages"
+  press Escape --selector "[data-testid=todo-item]:nth-child(2) *" --role textbox --name Edit
+  expect --selector "[data-testid=todo-item]" count is 3
+  expect --testid todo-item --nth 0 text is "${TODO0}"
+  expect --testid todo-item --nth 1 text is "${TODO1}"
+  expect --testid todo-item --nth 2 text is "${TODO2}"

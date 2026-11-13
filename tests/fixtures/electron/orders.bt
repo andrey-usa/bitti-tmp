@@ -1,0 +1,26 @@
+# An Electron app, scenario by scenario: navigera's fixture app (a form saved
+# through the app's main process, and a Settings window the app opens
+# itself). Each scenario gets a fresh app.
+#   bitti run tests/fixtures/electron --electron ../navigera/tests/fixtures/electron-app
+
+scenario "Saves an order through the main process"
+  expect title is Orders
+  expect js --main "({ app }) => app.getName()" is navigera-electron-fixture
+  fill --label Customer Ada
+  fill --label Quantity 3
+  click --role button --name "Save order"
+  expect text "Saved A-1003 for Ada"
+
+scenario "Starts from a fresh app"
+  expect --label Customer empty
+  click --role button --name "Save order"
+  expect text "Customer is required"
+
+scenario "Opens Settings in a window of its own"
+  click --role button --name Settings
+  expect title is Settings
+  expect js --main "({ BrowserWindow }) => BrowserWindow.getAllWindows().length" is 2
+  click --label "Compact rows"
+  expect --label "Compact rows" checked
+  click --role button --name Close
+  expect title is Orders

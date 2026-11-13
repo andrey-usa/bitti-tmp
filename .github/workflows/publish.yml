@@ -1,0 +1,199 @@
+name: publish
+
+# The binaries of a GitHub release (release.yml makes it) repackaged for npm,
+# PyPI, Homebrew and Scoop. After a release: Actions -> publish -> Run
+# workflow with its tag (e.g. v0.1.0). The run downloads that release's
+# archives, checks their SHA-256, builds the packages, installs and runs
+# them, then publishes to each registry that is switched on and doesn't have
+# that version yet. Running it again for the same tag only fills in what is
+# missing.
+#
+# Each registry is switched on by a repository variable (Settings -> Secrets
+# and variables -> Actions -> Variables):
+#   PUBLISH_NPM=true    npm, as @getbitti/bitti with platform packages
+#                       @getbitti/<os>-<cpu> (npm refuses the unscoped name
+#                       `bitti` as too close to existing packages, and the scope
+#                       @bitti belongs to another account; the npm org
+#                       `getbitti` owns this one). The first publish of a package needs the secret
+#                       NPM_TOKEN; once the packages exist, a trusted
+#                       publisher (this repository, publish.yml) can replace it.
+#   PUBLISH_PYPI=true   PyPI, through a trusted publisher (a pending one works
+#                       for the first upload): this repository, workflow
+#                       publish.yml, environment release.
+#   HOMEBREW_TAP=<owner>/homebrew-tap  SCOOP_BUCKET=<owner>/scoop-bucket
+#                       (pushed with the secret TAP_TOKEN)
+# With none set, or with publish off, it is a dry run: the packages are still
+# built, installed and run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "release tag to publish (e.g. v0.1.0)"
+        required: true
+      publish:
+        description: "publish (off = dry run: package and test only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      # The packaging script comes from this workflow's commit; the version,
+      # description, README and license from the release tag.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Download the release's archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D dist -p 'bitti-*'
+          (cd dist && for f in *.sha256; do sha256sum -c "$f"; done)
+      - id: meta
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p release-ref
+          for f in Cargo.toml README.md LICENSE; do git show "$TAG:$f" > "release-ref/$f"; done
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import os, sys, tomllib
+          pkg = tomllib.load(open("release-ref/Cargo.toml", "rb"))["package"]
+          if "v" + pkg["version"] != os.environ["TAG"]:
+              sys.exit(f"::error title=publish::{os.environ['TAG']} does not match its Cargo.toml version {pkg['version']}")
+          print(f"version={pkg['version']}")
+          print(f"description={pkg['description']}")
+          print(f"keywords={','.join(pkg.get('keywords', []))}")
+          EOF
+      - name: Build npm packages, wheels, Homebrew formula and Scoop manifest
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          DESCRIPTION: ${{ steps.meta.outputs.description }}
+          KEYWORDS: ${{ steps.meta.outputs.keywords }}
+        run: |
+          for kind in npm wheel homebrew scoop; do
+            python3 packaging/package.py "$kind" --name bitti --version "$VERSION" --dist dist --out pkg \
+              --repo "$GITHUB_REPOSITORY" --description "$DESCRIPTION" --keywords "$KEYWORDS" \
+              --readme release-ref/README.md --license-file release-ref/LICENSE \
+              --scope getbitti --npm-name @getbitti/bitti
+          done
+          for dir in pkg/npm/*/; do (cd "$dir" && npm pack --silent); done
+      - name: Install and run them
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install --quiet pkg/wheels/*manylinux*x86_64*.whl
+          /tmp/venv/bin/bitti --version
+          /tmp/venv/bin/pip install --quiet twine && /tmp/venv/bin/twine check pkg/wheels/*.whl
+          mkdir /tmp/npm-test && cd /tmp/npm-test && npm init -y >/dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/pkg/npm/getbitti-linux-x64/*.tgz "$GITHUB_WORKSPACE"/pkg/npm/bitti/*.tgz
+          node -p "require('@getbitti/bitti/package.json').name"
+          npx bitti --version
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: packages
+          path: pkg/
+
+  npm:
+    needs: packages
+    if: inputs.publish && vars.PUBLISH_NPM == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: pkg
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+      - env:
+          VERSION: ${{ needs.packages.outputs.version }}
+          # Empty once the packages have a trusted publisher: npm then signs in
+          # with this job's OIDC token.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # The artifact download drops file modes: the binaries must be
+          # executable in the tarballs npm publishes.
+          find pkg/npm -path '*/bin/*' -type f -exec chmod 755 {} +
+          for dir in pkg/npm/*/; do
+            (cd "$dir" && npm pack --dry-run --json 2>/dev/null) | node -e '
+              const p = JSON.parse(require("fs").readFileSync(0))[0];
+              for (const f of p.files)
+                if (f.path.startsWith("bin/") && !f.path.endsWith(".js") && !(f.mode & 0o111)) {
+                  console.error(`::error title=npm::${p.name}: ${f.path} is not executable in the package`);
+                  process.exit(1);
+                }'
+          done
+          # Platform packages first: the main package depends on them.
+          for dir in $(ls -d pkg/npm/*/ | grep -v '/bitti/$') pkg/npm/bitti/; do
+            name=$(node -p "require('./$dir/package.json').name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "::notice title=npm::$name $VERSION is already published"
+            else
+              (cd "$dir" && npm publish --provenance --access public)
+            fi
+          done
+
+  pypi:
+    needs: packages
+    if: inputs.publish && vars.PUBLISH_PYPI == 'true'
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: pkg
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+        with:
+          packages-dir: pkg/wheels
+          skip-existing: true
+
+  taps:
+    needs: packages
+    if: inputs.publish && (vars.HOMEBREW_TAP != '' || vars.SCOOP_BUCKET != '')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: packages
+          path: pkg
+      - env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          HOMEBREW_TAP: ${{ vars.HOMEBREW_TAP }}
+          SCOOP_BUCKET: ${{ vars.SCOOP_BUCKET }}
+          VERSION: ${{ needs.packages.outputs.version }}
+        run: |
+          git config --global user.name "andrey-usa"
+          git config --global user.email "62624421+andrey-usa@users.noreply.github.com"
+          update() {  # repo, source file, path in repo
+            [ -n "$1" ] || return 0
+            d="tap-$(basename "$1")"
+            git clone -q "https://x-access-token:$GH_TOKEN@github.com/$1.git" "$d"
+            mkdir -p "$(dirname "$d/$3")" && cp "$2" "$d/$3"
+            cd "$d"
+            git add "$3"
+            git diff --cached --quiet || { git commit -qm "bitti $VERSION" && git push -q; }
+            cd - >/dev/null
+          }
+          update "$HOMEBREW_TAP" pkg/bitti.rb Formula/bitti.rb
+          update "$SCOOP_BUCKET" pkg/bitti.json bucket/bitti.json

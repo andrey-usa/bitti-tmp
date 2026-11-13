@@ -1,0 +1,14 @@
+# A site that isn't there: every request is answered from a recorded HAR
+# (navigera's `network --har` writes one), in the order it was recorded.
+scenario "A recorded site replays with no server"
+  route --har har/shop.har
+  goto http://shop.test/
+  expect text "Price 12.50"
+  goto http://shop.test/
+  expect text "Price 9.99"
+
+# The real server answers; the test changes what comes back.
+scenario "A real response, changed"
+  route "*/m1" --modify --replace "Saved order 7" "Saved order 8" --set-header "X-Test: 1"
+  goto /m1
+  expect text "Saved order 8"

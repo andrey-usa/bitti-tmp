@@ -1,0 +1,44 @@
+scenario "Late text wakes its expect"
+  goto /login
+  eval "(() => { setTimeout(() => { const d = document.createElement('div'); d.textContent = 'arrived late'; document.body.appendChild(d); }, 200); return 1; })()"
+  expect text "arrived late"
+
+scenario "A negated expect wakes when the text goes"
+  goto /login
+  eval "(() => { const d = document.createElement('div'); d.textContent = 'Saving'; document.body.appendChild(d); setTimeout(() => d.remove(), 300); return 1; })()"
+  expect not text Saving
+
+scenario "A changing target wakes its expect"
+  goto /login
+  eval "(() => { const d = document.createElement('div'); d.id = 'c'; d.textContent = '1'; document.body.appendChild(d); setTimeout(() => { d.textContent = '3'; }, 200); return 1; })()"
+  expect --selector "#c" text is 3
+scenario "A button that enables wakes its expect"
+  goto /login
+  eval "(() => { const b = document.createElement('button'); b.id = 'b'; b.disabled = true; document.body.appendChild(b); setTimeout(() => { b.disabled = false; }, 200); return 1; })()"
+  expect --selector "#b" enabled
+
+scenario "A box that checks wakes its expect"
+  goto /login
+  eval "(() => { const c = document.createElement('input'); c.type = 'checkbox'; c.id = 'c'; document.body.appendChild(c); setTimeout(() => { c.checked = true; }, 300); return 1; })()"
+  expect --selector "#c" checked
+
+scenario "A target that appears wakes its expect"
+  goto /login
+  eval "(() => { const d = document.createElement('div'); d.id = 'v'; d.style.display = 'none'; document.body.appendChild(d); setTimeout(() => { d.style.display = ''; }, 200); return 1; })()"
+  expect --selector "#v" visible
+
+scenario "A negated expect wakes when the state goes"
+  goto /login
+  eval "(() => { const b = document.createElement('button'); b.id = 'n'; document.body.appendChild(b); setTimeout(() => { b.disabled = true; }, 300); return 1; })()"
+  expect not --selector "#n" enabled
+
+
+scenario "A box a click checks wakes its expect"
+  goto /login
+  eval "(() => { const c = document.createElement('input'); c.type = 'checkbox'; c.id = 'k'; document.body.appendChild(c); setTimeout(() => { c.click(); }, 200); return 1; })()"
+  expect --selector "#k" checked
+
+scenario "A field that takes focus wakes its expect"
+  goto /login
+  eval "(() => { const f = document.createElement('input'); f.id = 'f'; document.body.appendChild(f); setTimeout(() => { f.focus(); }, 200); return 1; })()"
+  expect --selector "#f" focused

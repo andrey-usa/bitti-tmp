@@ -1,0 +1,13 @@
+scenario "A page sees the permissions a step sets"
+  goto /login
+  expect js "navigator.permissions.query({name: 'notifications'}).then(p => p.state)" is "prompt"
+  set permissions grant notifications geolocation
+  expect js "navigator.permissions.query({name: 'notifications'}).then(p => p.state)" is "granted"
+  expect js "navigator.permissions.query({name: 'geolocation'}).then(p => p.state)" is "granted"
+  set permissions deny notifications
+  expect js "navigator.permissions.query({name: 'notifications'}).then(p => p.state)" is "denied"
+  expect js "navigator.permissions.query({name: 'geolocation'}).then(p => p.state)" is "granted"
+  set permissions reset notifications geolocation
+  expect js "navigator.permissions.query({name: 'notifications'}).then(p => p.state)" is "prompt"
+  set device Pixel 9
+  expect js "screen.width" is 360

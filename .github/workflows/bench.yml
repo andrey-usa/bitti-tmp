@@ -1,0 +1,89 @@
+name: bench
+
+# bitti against Playwright Test, on Node and on Bun, both at their latest:
+# Playwright's own TodoMVC suite (24 tests) and its one-to-one bitti port, on
+# the same local app and the same browser binary (Chrome for Testing and
+# chrome-headless-shell, as Playwright installs them), one worker each and
+# each tool's default; time, CPU, and runner and browser memory apart (RSS
+# and PSS). The results are printed as `bench json` notices, so the docs are
+# written from the run itself: python3 bench/todomvc/gen_docs.py <run id>
+# --readme README.md --page docs/benchmarks.md --losses docs/losses.md.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  todomvc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: bitti
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: bitti
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: andrey-usa/navigera
+          ref: next
+          path: navigera
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2
+        with:
+          toolchain: stable
+          cache-on-failure: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: latest
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Build bitti
+        run: cargo build --release --locked --bin bitti
+      - name: The app, Playwright's spec and @playwright/test (latest)
+        run: python3 bench/todomvc/setup.py --work "$RUNNER_TEMP/todomvc"
+      - name: The browsers both tools run, as Playwright installs them
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$RUNNER_TEMP/pw-browsers"
+          (cd "$RUNNER_TEMP/todomvc/pw" && npx playwright install --with-deps chromium chromium-headless-shell)
+          chrome=$(find "$PLAYWRIGHT_BROWSERS_PATH" -path '*chrome-linux64/chrome' -type f | head -1)
+          shell=$(find "$PLAYWRIGHT_BROWSERS_PATH" -name chrome-headless-shell -type f | head -1)
+          test -x "$chrome" && test -x "$shell"
+          { echo "BENCH_CHROME=$chrome"; echo "BENCH_SHELL=$shell"; echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_BROWSERS_PATH"; } >> "$GITHUB_ENV"
+      - name: Serve the app
+        run: |
+          nohup python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/todomvc/www" > "$RUNNER_TEMP/app.log" 2>&1 &
+          for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:8765/todomvc/ && exit 0; sleep 0.1; done
+          echo "the app did not answer"; exit 1
+      - name: Benchmark
+        run: |
+          python3 bench/todomvc/bench.py --bitti target/release/bitti --work "$RUNNER_TEMP/todomvc" \
+            --browser "chrome=$BENCH_CHROME" --browser "chrome-headless-shell=$BENCH_SHELL" \
+            --browser-dir "$PLAYWRIGHT_BROWSERS_PATH" --bun "$(command -v bun)" \
+            --runs 5 --pss-runs 2 --out "$RUNNER_TEMP/bench-out" --json bench-results.json --notices
+      - name: Publish table
+        run: |
+          python3 bench/todomvc/gen_docs.py bench-results.json --page bench-page.md
+          cat bench-page.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bench-results
+          path: |
+            bitti/bench-results.json
+            ${{ runner.temp }}/bench-out
