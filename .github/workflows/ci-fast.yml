@@ -24,17 +24,17 @@ jobs:
     env:
       BITTI_REQUIRE_BROWSER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: bitti
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: andrey-usa/navigera
           ref: next
           path: navigera
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache-workspaces: bitti
@@ -61,17 +61,17 @@ jobs:
     env:
       BITTI_REQUIRE_BROWSER: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: bitti
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: andrey-usa/navigera
           ref: next
           path: navigera
           persist-credentials: false
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           toolchain: stable
           cache-workspaces: bitti
